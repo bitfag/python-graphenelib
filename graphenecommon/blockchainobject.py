@@ -99,6 +99,7 @@ class Caching:
 
     def incached(self, id):
         """ Is an element cached?
+            This also forces to invalidate cache as __contains__() called
         """
         return id in self._cache
 
@@ -106,24 +107,6 @@ class Caching:
         """ Get an element from the cache explicitly
         """
         return self._cache.get(id, None)
-
-    def __getitem__(self, key):
-        if not self._fetched:
-            self.refresh()
-        return dict.__getitem__(self, key)
-
-    def items(self):
-        """ This overwrites items() so that refresh() is called it the
-            object is not already fetched
-        """
-        if not self._fetched:
-            self.refresh()
-        return dict.items(self)
-
-    def __contains__(self, key):
-        if not self._fetched:
-            self.refresh()
-        return dict.__contains__(self, key)
 
     def __repr__(self):
         return "<%s %s>" % (self.__class__.__name__, str(self.identifier))
@@ -145,13 +128,6 @@ class BlockchainObjects(Caching, list):
     _cache = ObjectCache()
     identifier = None
 
-    def refresh(self, *args, **kwargs):
-        """ Interface that needs to be implemented. This method is
-            called when an object is requested that has not yet been
-            fetched/stored
-        """
-        raise NotImplementedError
-
     def __init__(self, *args, **kwargs):
         Caching.__init__(self, *args, **kwargs)
         # Some lists are specific to some key value that is then provided as
@@ -162,9 +138,6 @@ class BlockchainObjects(Caching, list):
             key = self._cache_key()
         if self.incached(key):
             list.__init__(self, self.getfromcache(key))
-        else:
-            if kwargs.get("refresh", True):
-                self.refresh(*args, **kwargs)
 
     def _cache_key(self, key=""):
         if key:
@@ -216,6 +189,7 @@ class BlockchainObject(Caching, dict):
     _cache = ObjectCache()
 
     def __init__(self, data, klass=None, lazy=False, use_cache=True, *args, **kwargs):
+        self.type_id = kwargs.get("type_id", self.type_id)
         Caching.__init__(self, *args, **kwargs)
         self._use_cache = use_cache
         if self.perform_id_tests:
@@ -244,8 +218,6 @@ class BlockchainObject(Caching, dict):
             if self.incached(str(data)):
                 dict.__init__(self, self.getfromcache(str(data)))
                 self._fetched = True
-            if not self._lazy and not self._fetched:
-                self.refresh()
             # make sure to store the blocknumber for caching
             self["id"] = str(data)
             # Set identifier again as it is overwritten in super() in refresh()
@@ -258,8 +230,6 @@ class BlockchainObject(Caching, dict):
 
             if self.incached(data):
                 dict.__init__(self, dict(self.getfromcache(data)))
-            elif not self._lazy and not self._fetched:
-                self.refresh()
 
         if self._use_cache and not self._lazy:
             self._store_item()

@@ -1,16 +1,26 @@
 # -*- coding: utf-8 -*-
+from asyncinit import asyncinit
 from ..exceptions import AssetDoesNotExistsException
 from ..asset import Asset as SyncAsset
-from .blockchainobject import BlockchainObject
 
 
-class Asset(BlockchainObject, SyncAsset):
+@asyncinit
+class Asset(SyncAsset):
     async def __init__(self, *args, **kwargs):
         self.define_classes()
-        assert self.type_id
+        assert self.asset_data_class
 
         self.full = kwargs.pop("full", False)
-        await BlockchainObject.__init__(self, *args, **kwargs)
+        self.__data = {}
+
+        # Try load from cache
+        data = self.asset_data_class(*args, **kwargs)
+        if data:
+            self.__data = data
+        else:
+            # Load from chain
+            self.identifier = args[0]
+            await self.refresh()
 
     async def refresh(self):
         """ Refresh the data from the API server
@@ -18,7 +28,7 @@ class Asset(BlockchainObject, SyncAsset):
         asset = await self.blockchain.rpc.get_asset(self.identifier)
         if not asset:
             raise AssetDoesNotExistsException(self.identifier)
-        await super(Asset, self).__init__(asset, blockchain_instance=self.blockchain)
+        self.__data = self.asset_data_class(asset)
         if self.full:
             if "bitasset_data_id" in asset:
                 self["bitasset_data"] = await self.blockchain.rpc.get_object(

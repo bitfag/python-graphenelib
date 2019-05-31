@@ -6,7 +6,7 @@ import json
 
 # Graphene API
 from grapheneapi import exceptions
-from grapheneapi.api import Api, Websocket, Http
+from grapheneapi.aio.api import Api, Websocket, Http
 
 # Graphenebase
 import graphenebase.ecdsa as ecdsa
@@ -72,27 +72,27 @@ from graphenestorage.sqlite import SQLiteStore
 
 # Common stuff
 
-from graphenecommon.instance import (
-    BlockchainInstance as GBlockchainInstance,
-    SharedInstance as GSharedInstance,
-)
-from graphenecommon.amount import Amount as GAmount
+from graphenecommon.aio.instance import BlockchainInstance as GBlockchainInstance
+from graphenecommon.instance import SharedInstance as GSharedInstance
+from graphenecommon.aio.amount import Amount as GAmount
 from graphenecommon.account import Account as GAccount, AccountUpdate as GAccountUpdate
-from graphenecommon.asset import Asset as GAsset, AssetData as GAssetData
+from graphenecommon.asset import AssetData as GAssetData
+from graphenecommon.aio.asset import Asset as GAsset
 from graphenecommon.committee import Committee as GCommittee
-from graphenecommon.block import Block as GBlock, BlockHeader as GBlockHeader
+from graphenecommon.aio.block import Block as GBlock, BlockHeader as GBlockHeader
 from graphenecommon.blockchain import Blockchain as GBLockchain
 from graphenecommon.message import (
     Message as GMessage,
     MessageV1 as GMessageV1,
     MessageV2 as GMessageV2,
 )
-from graphenecommon.blockchainobject import ObjectCache, BlockchainObject
+from graphenecommon.blockchainobject import ObjectCache
+from graphenecommon.aio.blockchainobject import BlockchainObject
 from graphenecommon.price import Price as GPrice
 from graphenecommon.wallet import Wallet as GWallet
 from graphenecommon.worker import Worker as GWorker, Workers as GWorkers
 from graphenecommon.witness import Witness as GWitness, Witnesses as GWitnesss
-from graphenecommon.chain import AbstractGrapheneChain
+from graphenecommon.aio.chain import AbstractGrapheneChain
 
 objects_cache = dict()
 
@@ -159,21 +159,31 @@ class Chain(AbstractGrapheneChain):
                     d = yaml.safe_load(fid)
                 return d.get(name)
 
-            def get_objects(self, ids, *args, **kwargs):
-                return [self.get_object(x) for x in ids]
+            async def get_objects(self, ids, *args, **kwargs):
+                return [await self.get_object(x) for x in ids]
 
-            def get_object(self, id, *args, **kwargs):
+            async def get_object(self, id, *args, **kwargs):
                 return get_object(id)
 
-            def get_asset(self, name, **kwargs):
+            async def get_asset(self, name, **kwargs):
                 """ Method from python-bitshares
                 """
                 if len(name.split(".")) == 3:
-                    result = self.get_objects([name], **kwargs)
+                    result = await self.get_objects([name], **kwargs)
                     return result[0]
                 else:
-                    # No assets exists here except cached
-                    return []
+                    return self.lookup_asset_symbols([name], **kwargs)[0]
+
+            def lookup_asset_symbols(self, name: list, **kwargs):
+                name = name[0]
+                result = [
+                    obj
+                    for obj in objects_cache
+                    if "symbol" in obj and obj["symbol"] == name
+                ]
+                if not result:
+                    result = [None]
+                return result
 
             def get_account_history(self, *args, **kwargs):
                 with open(
@@ -203,7 +213,7 @@ class Chain(AbstractGrapheneChain):
                 }
 
             def __getattr__(self, name):
-                def fun(self, *args, **kwargs):
+                async def fun(self, *args, **kwargs):
                     return {}
 
                 return fun
